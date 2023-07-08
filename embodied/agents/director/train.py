@@ -1,6 +1,8 @@
 import pathlib
 import sys
 import warnings
+import tensorflow as tf
+import wandb
 
 warnings.filterwarnings('ignore', '.*box bound precision lowered.*')
 warnings.filterwarnings('ignore', '.*using stateful random seeds*')
@@ -23,6 +25,12 @@ def main(argv=None):
   from . import agent as agnt
   from . import train_with_viz
 
+  wandb.init(
+    # config=tf.flags.FLAGS,
+    project="director",
+    sync_tensorboard=True,
+  )
+             
   parsed, other = embodied.Flags(
       configs=['defaults'], actor_id=0, actors=0,
   ).parse_known(argv)
@@ -39,6 +47,8 @@ def main(argv=None):
   logdir = embodied.Path(config.logdir)
   step = embodied.Counter()
   cleanup = []
+
+  return
 
   if config.run == 'acting':
     actordir = logdir / f'actor{parsed.actor_id}'
@@ -81,6 +91,7 @@ def main(argv=None):
     env = embodied.envs.load_env(
         config.task, mode='train', logdir=logdir, **config.env)
     agent = agnt.Agent(env.obs_space, env.act_space, step, config)
+    
     if config.run == 'train':
       replay = make_replay('episodes', config.replay_size)
       embodied.run.train(agent, env, replay, logger, args)
