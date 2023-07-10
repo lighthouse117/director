@@ -4,7 +4,6 @@ from typing import Type
 import numpy as np
 
 from .convert import convert
-from ..agents.director.agent import Agent
 
 
 class Driver:
@@ -41,11 +40,18 @@ class Driver:
     def __call__(self, policy, steps=0, episodes=0):
         step, episode = 0, 0
         # ステップをまわす
+        print("[Driver.__call__]")
+        print(f"steps: {steps}, episodes: {episodes}")
+        print("Performing steps...")
         while step < steps or episode < episodes:
             step, episode = self._step(policy, step, episode)
+        print("Done.")
+        print(f"step: {step}, episode: {episode}")
 
-    def _step(self, policy: callable(Agent.policy), step, episode):
+    def _step(self, policy, step, episode):
         # 1ステップ進める
+        # print("[Driver._step]")
+        # print(f"step: {step}, episode: {episode}")
 
         # 行動を決定
         acts, self._state = policy(self._obs, self._state, **self._kwargs)

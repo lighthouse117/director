@@ -34,16 +34,17 @@ ENV MUJOCO_GL egl
 RUN pip3 install --no-cache-dir dm-sonnet
 RUN pip3 install --no-cache-dir tensorflow_probability
 ENV TF_FUNCTION_JIT_COMPILE_DEFAULT 1
-# ENV XLA_PYTHON_CLIENT_MEM_FRACTION 
+ENV TF_FORCE_UNIFIED_MEMORY 1
+ENV XLA_PYTHON_CLIENT_MEM_FRACTION 0.8
 
 # Embodied
 RUN pip3 install --no-cache-dir numpy cloudpickle ruamel.yaml rich
-RUN pip3 install --upgrade PyOpenGL PyOpenGL_accelerate matplotlib
+RUN pip3 install --upgrade PyOpenGL PyOpenGL_accelerate matplotlib requests
 RUN pip3 install tensorflow_probability==0.19.0
-RUN pip3 install wandb
+RUN pip3 install wandb mlflow
 # COPY . /embodied
 # RUN chown -R 1000:root /embodied && chmod -R 775 /embodied
-WORKDIR /embodied
+WORKDIR /src/embodied
 
 # CMD [ \
 #   "python3", "agents/director/train.py" \

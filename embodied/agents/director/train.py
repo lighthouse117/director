@@ -3,6 +3,7 @@ import sys
 import warnings
 import tensorflow as tf
 import wandb
+# import mlflow
 import absl
 
 warnings.filterwarnings("ignore", ".*box bound precision lowered.*")
@@ -26,11 +27,10 @@ def main(argv=None):
     from . import agent as agnt
     from . import train_with_viz
 
-    wandb.init(
-        # config=tf.flags.FLAGS,
-        project="director",
-        sync_tensorboard=True,
-    )
+    # wandb.init(
+    #     project="director",
+    #     sync_tensorboard=True,
+    # )
 
     # 実行時の引数
     parsed, other = embodied.Flags(
@@ -82,6 +82,7 @@ def main(argv=None):
     if config.replay == "fixed":
 
         def make_replay(name, capacity):
+            print("Creating replay buffer")
             directory = logdir / name
             store = embodied.replay.CkptRAMStore(directory, capacity, parallel=True)
             cleanup.append(store)
@@ -106,6 +107,8 @@ def main(argv=None):
     else:
         raise NotImplementedError(config.replay)
 
+    # wandb.config.update(config)
+
     # モードに応じて学習を実行
     try:
         # seed
@@ -114,8 +117,11 @@ def main(argv=None):
         env = embodied.envs.load_env(
             config.task, mode="train", logdir=logdir, **config.env
         )
+        print("Loaded env")
+
         # エージェント
         agent = agnt.Agent(env.obs_space, env.act_space, step, config)
+        print("Created agent")
 
         # 通常の学習
         if config.run == "train":
@@ -163,9 +169,9 @@ def main(argv=None):
         for obj in cleanup:
             obj.close()
 
-    wandb.config.update(absl.flags.FLAGS)
-
 
 if __name__ == "__main__":
-    wandb.login(key="6b65aa89d9170a9484ef41dd3783f39f50f19943")
+    # wandb.login(key="6b65aa89d9170a9484ef41dd3783f39f50f19943")
+    # mlflow.set_experiment("test")
+    # mlflow.tensorflow.autolog()
     main()

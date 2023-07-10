@@ -43,8 +43,8 @@ defaults:
     }
   tf:
     {
-      jit: True,
-      platform: gpu,
+      jit: False,
+      platform: multi_gpu,
       precision: 16,
       debug_nans: False,
       logical_gpus: 0,
@@ -61,17 +61,17 @@ defaults:
     steps: 1e8
     expl_until: 0
     # log_every: 1e4
-    log_every: 10
+    log_every: 1e3
     # eval_every: 3e4
-    eval_every: 10
+    eval_every: 1e3
     eval_eps: 1
     eval_samples: 1
     train_every: 16
     train_steps: 1
-    # train_fill: 1e4
-    train_fill: 10
-    # eval_fill: 1e4
-    eval_fill: 10
+    train_fill: 1e3
+    # train_fill: 10
+    eval_fill: 1e3
+    # eval_fill: 10
     pretrain: 1
     log_zeros: False
     log_keys_video: [image]
@@ -356,7 +356,7 @@ atari:
   encoder: { mlp_keys: "$^", cnn_keys: "image" }
   decoder: { mlp_keys: "$^", cnn_keys: "image" }
   env: { gray: True, repeat: 4 }
-  train.steps: 1000
+  train.steps: 1e4
 
 crafter:
   task: crafter_reward

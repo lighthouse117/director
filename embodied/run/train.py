@@ -1,6 +1,7 @@
 import collections
 import re
 import warnings
+import sys
 
 import embodied
 from ..agents.director import agent
@@ -14,6 +15,7 @@ def train(
     logger: embodied.Logger,
     args: embodied.Config,
 ):
+    print("[run.train.train]")
     logdir = embodied.Path(args.logdir)
     logdir.mkdirs()
     print("Logdir", logdir)
@@ -32,6 +34,7 @@ def train(
     nonzeros = set()
 
     def per_episode(ep):
+        print("[run.train.train.per_episode]")
         metrics = {}
         length = len(ep["reward"]) - 1
         score = float(ep["reward"].astype(np.float64).sum())
@@ -73,12 +76,16 @@ def train(
     state = [None]  # To be writable from train step function below.
     assert args.pretrain > 0  # At least one step to initialize variables.
     for _ in range(args.pretrain):
+        print("Pretraining...")
         _, state[0], _ = agent.train(next(dataset), state[0])
+
+    print("Pretraining done.")
 
     metrics = collections.defaultdict(list)
     batch = [None]
 
     def train_step(tran, worker):
+        print("[run.train.train.train_step]")
         if should_train(step):
             for _ in range(args.train_steps):
                 #
@@ -106,10 +113,13 @@ def train(
     checkpoint.load_or_save()
 
     print("Start training loop.")
+
     policy = lambda *args: agent.policy(
         *args, mode="explore" if should_expl(step) else "train"
     )
     while step < args.steps:
         # eval_everyの回数だけステップをまわす
+        print("Step", step)
+        print("driver(policy, steps=args.eval_every)")
         driver(policy, steps=args.eval_every)
         checkpoint.save()
