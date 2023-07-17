@@ -277,10 +277,14 @@ class Hierarchy(tfutils.Module):
             mtraj = self.abstract_traj(traj)
             print("mtraj", mtraj.keys())
 
+        # Workerの学習
         mets = self.worker.update(wtraj, tape)
         metrics.update({f"worker_{k}": v for k, v in mets.items()})
+
+        # Managerの学習
         mets = self.manager.update(mtraj, tape)
         metrics.update({f"manager_{k}": v for k, v in mets.items()})
+        
         return traj, metrics
 
     def train_jointly_old(self, imagine, start):
@@ -443,21 +447,75 @@ class Hierarchy(tfutils.Module):
         return metrics
 
     def propose_goal(self, start, impl):
+        """
+        ログ用にデコードされたゴールを生成
+        """
         feat = self.feat(start).astype(tf.float32)
         if impl == "replay":
+            # 状態をランダムに選択
             target = tf.random.shuffle(feat).astype(tf.float32)
+
+            # ランダムに選んだ潜在表現を離散ベクトルにエンコード
             skill = self.enc({"goal": target, "context": feat}).sample()
+
+            # 離散ベクトルを連続ベクトルへデコード
             return self.dec({"skill": skill, "context": feat}).mode()
+
         if impl == "replay_direct":
+            # 実際の状態表現をランダムに選択
             return tf.random.shuffle(feat).astype(tf.float32)
+
         if impl == "manager":
+            # Managerがskillを決定
             skill = self.manager.actor(start).sample()
+
+            # 離散表現のskillからゴールの連続ベクトルへデコード
             goal = self.dec({"skill": skill, "context": feat}).mode()
-            goal = feat + goal if self.config.manager_delta else goal
+
+            # goal = feat + goal if self.config.manager_delta else goal
             return goal
+
         if impl == "prior":
+            # ランダムに離散ベクトルをサンプリング
             skill = self.prior.sample(len(start["is_terminal"]))
+
+            # 連続ベクトルにデコードしてみる
             return self.dec({"skill": skill, "context": feat}).mode()
+
+        raise NotImplementedError(impl)
+
+    def propose_skill_and_goal(self, start, impl):
+        """
+        ログ用にデコード前のskillとエンコードされたゴールを生成
+        """
+        feat = self.feat(start).astype(tf.float32)
+        if impl == "replay":
+            # 状態をランダムに選択
+            target = tf.random.shuffle(feat).astype(tf.float32)
+
+            # ランダムに選んだ潜在表現を離散ベクトルにエンコード
+            skill = self.enc({"goal": target, "context": feat}).sample()
+
+            # 離散ベクトルを連続ベクトルへデコード
+            return skill, self.dec({"skill": skill, "context": feat}).mode()
+
+        if impl == "manager":
+            # Managerがskillを決定
+            skill = self.manager.actor(start).sample()
+
+            # 離散表現のskillからゴールの連続ベクトルへデコード
+            goal = self.dec({"skill": skill, "context": feat}).mode()
+
+            # goal = feat + goal if self.config.manager_delta else goal
+            return skill, goal
+
+        if impl == "prior":
+            # ランダムに離散ベクトルをサンプリング
+            skill = self.prior.sample(len(start["is_terminal"]))
+
+            # 連続ベクトルにデコードしてみる
+            return skill, self.dec({"skill": skill, "context": feat}).mode()
+
         raise NotImplementedError(impl)
 
     def goal_reward(self, traj):
@@ -641,15 +699,22 @@ class Hierarchy(tfutils.Module):
         )
         start = {k: v[:, 4] for k, v in states.items()}
         start["is_terminal"] = data["is_terminal"][:6, 4]
-        goal = self.propose_goal(start, impl)
+
+        # ゴール（連続表現）を決定
+        # goal = self.propose_goal(start, impl)
+
+        # ゴール（デコード前の離散表現 + デコード後の連続表現）を決定
+        skill, goal = self.propose_skill_and_goal(start, impl)
+
         # Worker rollout.
         worker = lambda s: self.worker.actor(
             {
                 **s,
-                "goal": goal,
+                "skill": skill,
                 "delta": goal - self.feat(s).astype(tf.float32),
             }
         ).sample()
+
         traj = self.wm.imagine(worker, start, self.config.worker_report_horizon)
         # Decoder into images.
         initial = decoder(start)

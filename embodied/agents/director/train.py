@@ -23,7 +23,7 @@ __package__ = directory.name
 
 import embodied
 
-WANDB = False
+WANDB = True
 
 
 def main(argv=None):

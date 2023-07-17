@@ -429,6 +429,7 @@ class ImagActorCritic(tfutils.Module):
         return traj, metrics
 
     def update(self, traj, tape=None):
+        #
         tape = tape or tf.GradientTape()
         metrics = {}
         for key, critic in self.critics.items():
