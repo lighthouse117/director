@@ -35,6 +35,10 @@ class Hierarchy(tfutils.Module):
         )
 
         # Worker
+        # - critics
+        # - scales
+        # - act_space
+        # - config
         self.worker = agent.ImagActorCritic(
             {
                 "extr": agent.VFunction(lambda s: s["reward_extr"], wconfig),
@@ -131,6 +135,7 @@ class Hierarchy(tfutils.Module):
         )
 
         # 現在の状態からmanagerがgoalを決定
+        # print("Decide skill")
         skill = sg(switch(carry["skill"], self.manager.actor(sg(latent)).sample()))
 
         # 離散表現のゴールから連続の潜在状態へデコード
@@ -151,7 +156,13 @@ class Hierarchy(tfutils.Module):
         delta = goal - self.feat(latent).astype(tf.float32)
 
         # Workerが行動を決定
-        dist = self.worker.actor(sg({**latent, "goal": goal, "delta": delta}))
+        # TODO: goalをskillのまま入力
+        print("Decide action\n")
+        dist = self.worker.actor(sg({**latent, "skill": skill, "delta": delta}))
+        # dist = self.worker.actor(sg({**latent, "goal": goal, "delta": delta}))
+        print("Action (worker actor): ", dist.sample())
+        print()
+
         outs = {"action": dist}
 
         if "image" in self.wm.heads["decoder"].shapes:

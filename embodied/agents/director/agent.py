@@ -94,10 +94,10 @@ class Agent(tfagent.TFAgent):
             lambda x: x.reshape([-1] + list(x.shape[2:])), context
         )
 
-        print("context")
-        pprint.pprint(context)
-        print("start")
-        pprint.pprint(start)
+        # print("context")
+        # pprint.pprint(context)
+        # print("start")
+        # pprint.pprint(start)
 
         # Goal Autoencoder + Manager + Worker の学習 (Hierarchy class)
         # tf.print("[Agent.train] task_behavior.train")
@@ -223,7 +223,7 @@ class WorldModel(tfutils.Module):
         # エンコードされた画像入力から求めた潜在表現（posterior z）と
         # RSSMのhのみから推論した潜在表現（prior z）を計算
         post, prior = self.rssm.observe(embed, data["action"], data["is_first"], state)
-        print("RSSM.observe()")
+        # print("RSSM.observe()")
         # print("post: ", post)
         # print("prior: ", prior)
         # deter: deterministic
@@ -337,14 +337,13 @@ class WorldModel(tfutils.Module):
         # horizon = 16
         # 数タイムステップ先までをループで予測
         for _ in range(horizon):
-
             # RSSMに潜在状態と行動を入力して次の状態を予測
             states.append(self.rssm.img_step(states[-1], actions[-1]))
 
             # 行動を決定
             outs, carry = policy(states[-1], carry)
             action = outs["action"]
-            
+
             if hasattr(action, "sample"):
                 action = action.sample()
             actions.append(action)
@@ -380,6 +379,7 @@ class WorldModel(tfutils.Module):
         return report
 
 
+# Worker & Manager
 class ImagActorCritic(tfutils.Module):
     def __init__(self, critics, scales, act_space, config):
         critics = {k: v for k, v in critics.items() if scales[k]}

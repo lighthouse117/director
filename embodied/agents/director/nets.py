@@ -1,5 +1,6 @@
 import functools
 import re
+import pprint
 
 import numpy as np
 import tensorflow as tf
@@ -398,6 +399,7 @@ class MLP(tfutils.Module):
 
     def __call__(self, inputs):
         feat = self._inputs(inputs)
+
         x = tf.cast(feat, prec.global_policy().compute_dtype)
         x = x.reshape([-1, x.shape[-1]])
         for i in range(self._layers):
@@ -405,6 +407,17 @@ class MLP(tfutils.Module):
             x = self.get(f"dense{i}", Dense, self._units, **self._dense)(x)
             # print(f"Output shape of dense{i}: {x.shape}")
         x = x.reshape(feat.shape[:-1] + [x.shape[-1]])
+
+        if "goal" in self._inputs._keys:
+            print()
+            print("Raw input:")
+            pprint.pprint(inputs)
+            print("Feat:")
+            pprint.pprint(feat)
+            print("Output before dist:")
+            pprint.pprint(x)
+            print()
+
         if self._shape is None:
             return x
         elif isinstance(self._shape, tuple):
@@ -493,6 +506,7 @@ class DistLayer(tfutils.Module):
             return dist
         if self._dist == "onehot":
             if self._unimix:
+                # for worker & manager
                 probs = tf.nn.softmax(out, -1)
                 uniform = tf.ones_like(probs) / probs.shape[-1]
                 probs = (1 - self._unimix) * probs + self._unimix * uniform

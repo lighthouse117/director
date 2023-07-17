@@ -41,8 +41,7 @@ defaults:
       constant: 0.0,
       exponent: 0.5,
     }
-  tf:
-    {
+  tf: {
       # eagerモードを使うかどうか
       jit: True,
       platform: gpu,
@@ -241,7 +240,10 @@ defaults:
   skill_shape: [8, 8]
   manager_rews: { extr: 1.0, expl: 0.1, goal: 0.0 }
   worker_rews: { extr: 0.0, expl: 0.0, goal: 1.0 }
-  worker_inputs: [deter, stoch, goal]
+
+  # worker_inputs: [deter, stoch, goal]
+  worker_inputs: [deter, stoch, skill]
+
   worker_report_horizon: 64
   skill_proposal: manager
   goal_proposal: replay
