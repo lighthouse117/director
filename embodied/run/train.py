@@ -34,13 +34,19 @@ def train(
     nonzeros = set()
 
     def per_episode(ep):
+        # 1エピソード終了時の処理
+
         print("[run.train.train.per_episode]")
         metrics = {}
+        # エピソードの長さ
         length = len(ep["reward"]) - 1
+        # エピソードの報酬の合計
         score = float(ep["reward"].astype(np.float64).sum())
         print(f"Episode has {length} steps and return {score:.1f}.")
+        # metricsに保存
         metrics["length"] = length
         metrics["score"] = score
+        #
         metrics["reward_rate"] = (ep["reward"] - ep["reward"].min() >= 0.1).mean()
         logs = {}
         for key, value in ep.items():
@@ -61,11 +67,16 @@ def train(
         logger.add(replay.stats, prefix="replay")
         logger.write()
 
+    # エピソードまたはステップごとに行う関数を登録する
     driver = embodied.Driver(env)
+    # エピソード終了時
     driver.on_episode(lambda ep, worker: per_episode(ep))
+    # ステップ数のカウント
     driver.on_step(lambda tran, _: step.increment())
+    # replay bufferに保存
     driver.on_step(replay.add)
 
+    print(f"Replay buffer has {len(replay)} transitions.")
     train_fill = max(0, args.train_fill - len(replay))
     if train_fill:
         print(f"Fill train dataset ({train_fill} steps).")
@@ -85,15 +96,42 @@ def train(
     batch = [None]
 
     def train_step(tran, worker):
-        print("[run.train.train.train_step]")
+        # 毎回のタイムステップごとに呼び出される
+        # ここで学習を行う
+        # print("[run.train.train.train_step]")
+
+        # train_everyの回数ごとに学習を行う
         if should_train(step):
+            # train_steps = 1
             for _ in range(args.train_steps):
-                #
+                # Replay bufferからtrajectoryを取得
+                # batch_size数 x replay_chunk数のタイムステップ分の情報が入っている
                 batch[0] = next(dataset)
+
+                print(f"Batch[0] has {len(batch[0])} elements:")
+                for key, value in batch[0].items():
+                    if hasattr(value, "shape"):
+                        print(key, value.shape, value.dtype)
+                    else:
+                        print(key, value)
+                print(f"State[0] has {len(state[0])} elements:")
+                for key, value in state[0].items():
+                    if hasattr(value, "shape"):
+                        print(key, value.shape, value.dtype)
+                    else:
+                        print(key, value)
+
+                # エージェントの学習（世界モデル ＋ Goal Autoencoder + Manager + Worker）
                 outs, state[0], mets = agent.train(batch[0], state[0])
+
+                # metricsに保存
                 [metrics[key].append(value) for key, value in mets.items()]
+
+                # Replay bufferの優先度を更新
                 if "priority" in outs:
                     replay.prioritize(outs["key"], outs["priority"])
+
+        # log_everyの回数ごとにログを出力する
         if should_log(step):
             with warnings.catch_warnings():  # Ignore empty slice warnings.
                 warnings.simplefilter("ignore", category=RuntimeWarning)
@@ -104,6 +142,7 @@ def train(
             logger.add(timer.stats(), prefix="timer")
             logger.write(fps=True)
 
+    # 1ステップごとにtrain_stepを実行するように登録
     driver.on_step(train_step)
 
     checkpoint = embodied.Checkpoint(logdir / "checkpoint.pkl")
@@ -114,12 +153,15 @@ def train(
 
     print("Start training loop.")
 
+    # エージェントの方策
     policy = lambda *args: agent.policy(
         *args, mode="explore" if should_expl(step) else "train"
     )
+
+    # 上限ステップ数まで学習を行う
     while step < args.steps:
-        # eval_everyの回数だけステップをまわす
         print("Step", step)
         print("driver(policy, steps=args.eval_every)")
+        # eval_everyの回数だけ学習をしながら環境ステップをまわす
         driver(policy, steps=args.eval_every)
         checkpoint.save()

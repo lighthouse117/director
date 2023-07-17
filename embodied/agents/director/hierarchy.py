@@ -15,12 +15,16 @@ from . import tfutils
 class Hierarchy(tfutils.Module):
     def __init__(self, wm, act_space, config):
         print("[Hierarchy.__init__]")
+        # wm: WorldModel
         self.wm = wm
         self.config = config
+        # extrinsic reward
         self.extr_reward = lambda traj: self.wm.heads["reward"](traj).mean()[1:]
+
         self.skill_space = embodied.Space(
+            # onehot
             np.int32 if config.goal_encoder.dist == "onehot" else np.float32,
-            config.skill_shape,
+            config.skill_shape,  # skill_shape: [8, 8]
         )
 
         wconfig = config.update(
@@ -29,6 +33,8 @@ class Hierarchy(tfutils.Module):
                 "critic.inputs": self.config.worker_inputs,
             }
         )
+
+        # Worker
         self.worker = agent.ImagActorCritic(
             {
                 "extr": agent.VFunction(lambda s: s["reward_extr"], wconfig),
@@ -46,6 +52,8 @@ class Hierarchy(tfutils.Module):
                 "actent.target": config.manager_actent,
             }
         )
+
+        # Manager
         self.manager = agent.ImagActorCritic(
             {
                 "extr": agent.VFunction(lambda s: s["reward_extr"], mconfig),
@@ -60,9 +68,12 @@ class Hierarchy(tfutils.Module):
         if self.config.expl_rew == "disag":
             self.expl_reward = expl.Disag(wm, act_space, config)
         elif self.config.expl_rew == "adver":
+            # default
             self.expl_reward = self.elbo_reward
         else:
             raise NotImplementedError(self.config.expl_rew)
+
+        # explorer = false
         if config.explorer:
             self.explorer = agent.ImagActorCritic(
                 {
@@ -83,8 +94,13 @@ class Hierarchy(tfutils.Module):
 
         self.feat = nets.Input(["deter"])
         self.goal_shape = (self.config.rssm.deter,)
+
+        # Goal Encoder
+        # skill_shape: [8, 8] (Output)
         self.enc = nets.MLP(config.skill_shape, dims="context", **config.goal_encoder)
+        # Goal Decoder
         self.dec = nets.MLP(self.goal_shape, dims="context", **self.config.goal_decoder)
+
         self.kl = tfutils.AutoAdapt((), **self.config.encdec_kl)
         self.opt = tfutils.Optimizer("goal", **config.encdec_opt)
 
@@ -96,29 +112,48 @@ class Hierarchy(tfutils.Module):
         }
 
     def policy(self, latent, carry, imag=False):
-        tf.print("[Hierarchy.policy]")
+        # tf.print("[Hierarchy.policy]")
+        # imag = True
         duration = (
             self.config.train_skill_duration
             if imag
             else (self.config.env_skill_duration)
         )
+
+        # for stoppping gradients
         sg = lambda x: tf.nest.map_structure(tf.stop_gradient, x)
+
         update = (carry["step"] % duration) == 0
+
         switch = lambda x, y: (
             tf.einsum("i,i...->i...", 1 - update.astype(x.dtype), x)
             + tf.einsum("i,i...->i...", update.astype(x.dtype), y)
         )
+
+        # 現在の状態からmanagerがgoalを決定
         skill = sg(switch(carry["skill"], self.manager.actor(sg(latent)).sample()))
+
+        # 離散表現のゴールから連続の潜在状態へデコード
+        # TODO: デコードせずにそのままゴールを使う
         new_goal = self.dec({"skill": skill, "context": self.feat(latent)}).mode()
-        new_goal = (
-            self.feat(latent).astype(tf.float32) + new_goal
-            if self.config.manager_delta
-            else new_goal
-        )
+
+        # manager_delta = false
+        # manager_delta -> 現在状態からの差分をゴールとするようにする
+        # new_goal = (
+        #     self.feat(latent).astype(tf.float32) + new_goal
+        #     if self.config.manager_delta
+        #     else new_goal
+        # )
+
         goal = sg(switch(carry["goal"], new_goal))
+
+        # 現在状態とゴールとの差分
         delta = goal - self.feat(latent).astype(tf.float32)
+
+        # Workerが行動を決定
         dist = self.worker.actor(sg({**latent, "goal": goal, "delta": delta}))
         outs = {"action": dist}
+
         if "image" in self.wm.heads["decoder"].shapes:
             outs["log_goal"] = self.wm.heads["decoder"](
                 {
@@ -126,18 +161,28 @@ class Hierarchy(tfutils.Module):
                     "stoch": self.wm.rssm.get_stoch(goal),
                 }
             )["image"].mode()
+
+        # 次のタイムステップに持ち越す情報
         carry = {"step": carry["step"] + 1, "skill": skill, "goal": goal}
+
         return outs, carry
 
     def train(self, imagine, start, data):
-        tf.print("[Hierarchy.train]")
+        # tf.print("[Hierarchy.train]")
         success = lambda rew: (rew[-1] > 0.7).astype(tf.float32).mean()
         metrics = {}
+
+        # No
         if self.config.expl_rew == "disag":
             tf.print("[Hierarchy.train] expl_reward.train")
             metrics.update(self.expl_reward.train(data))
+
+        # Yes
         if self.config.vae_replay:
+            # Goal Autoencoderの学習
             metrics.update(self.train_vae_replay(data))
+
+        # No
         if self.config.explorer:
             tf.print("[Hierarchy.train] explorer.train")
             traj, mets = self.explorer.train(imagine, start, data)
@@ -146,16 +191,21 @@ class Hierarchy(tfutils.Module):
             if self.config.explorer_repeat:
                 goal = self.feat(traj)[-1]
                 metrics.update(self.train_worker(imagine, start, goal)[1])
+
+        # "new"
         if self.config.jointly == "new":
+            # まとめて学習
             traj, mets = self.train_jointly(imagine, start)
             metrics.update(mets)
             metrics["success_manager"] = success(traj["reward_goal"])
             if self.config.vae_imag:
                 metrics.update(self.train_vae_imag(traj))
+
         elif self.config.jointly == "old":
             traj, mets = self.train_jointly_old(imagine, start)
             metrics.update(mets)
             metrics["success_manager"] = success(traj["reward_goal"])
+            # No
             if self.config.vae_imag:
                 metrics.update(self.train_vae_imag(traj))
         elif self.config.jointly == "off":
@@ -171,27 +221,51 @@ class Hierarchy(tfutils.Module):
             metrics["success_manager"] = success(traj["reward_goal"])
         else:
             raise NotImplementedError(self.config.jointly)
-        tf.print("[/Hierarchy.train]")
+        # tf.print("[/Hierarchy.train]")
+
         return None, metrics
 
     def train_jointly(self, imagine, start):
         tf.print("[Hierarchy.train_jointly]")
         start = start.copy()
         metrics = {}
+
         with tf.GradientTape(persistent=True) as tape:
             policy = functools.partial(self.policy, imag=True)
+
+            # 世界モデルで数タイムステップ先までのトラジェクトリを想像して生成
             traj = self.wm.imagine_carry(
                 policy,
                 start,
                 self.config.imag_horizon,
                 self.initial(len(start["is_first"])),
             )
+
+            print("traj (wm.imagine_carry)", traj.keys())
+
+            # 報酬を予測
             traj["reward_extr"] = self.extr_reward(traj)
+            print("traj[reward_extr]", traj["reward_extr"].shape)
+
+            # self.elbo_reward(traj)
             traj["reward_expl"] = self.expl_reward(traj)
+            print("traj[reward_expl]", traj["reward_expl"].shape)
+
+            # goal_rewardを計算
             traj["reward_goal"] = self.goal_reward(traj)
+            print("traj[reward_goal]", traj["reward_goal"].shape)
+
+            # trajからdeterministicnな潜在状態を取り出して、ゴール状態との差分を計算
             traj["delta"] = traj["goal"] - self.feat(traj).astype(tf.float32)
+            print("traj[delta]", traj["delta"].shape)
+
             wtraj = self.split_traj(traj)
+            print("wtraj", wtraj.keys())
+
+            # Kタイムステップとばした抽象的なtrajectory
             mtraj = self.abstract_traj(traj)
+            print("mtraj", mtraj.keys())
+
         mets = self.worker.update(wtraj, tape)
         metrics.update({f"worker_{k}": v for k, v in mets.items()})
         mets = self.manager.update(mtraj, tape)
@@ -276,9 +350,15 @@ class Hierarchy(tfutils.Module):
         return traj, metrics
 
     def train_vae_replay(self, data):
-        tf.print("[Hierarchy.train_vae_replay]")
+        """
+        Replay Bufferからデータを取り出してVAEを学習する
+        """
+
+        # tf.print("[Hierarchy.train_vae_replay]")
         metrics = {}
         feat = self.feat(data).astype(tf.float32)
+
+        # inputs: [skill]
         if "context" in self.config.goal_decoder.inputs:
             if self.config.vae_span:
                 context = feat[:, 0]
@@ -289,10 +369,22 @@ class Hierarchy(tfutils.Module):
                 goal = feat[:, self.config.train_skill_duration :]
         else:
             goal = context = feat
+
         with tf.GradientTape() as tape:
+            # Goal Encoderを通す
+            # print("Input to Goal Encoder")
+            # print("goal", goal.shape)
+            # print("context", context.shape)
             enc = self.enc({"goal": goal, "context": context})
+            # print("Output from Goal Encoder", enc)
+
             dec = self.dec({"skill": enc.sample(), "context": context})
+            # print("Output from Goal Decoder", dec.sample().shape)
+
+            # 再構成のロス
             rec = -dec.log_prob(tf.stop_gradient(goal))
+
+            # KLロス
             if self.config.goal_kl:
                 kl = tfd.kl_divergence(enc, self.prior)
                 kl, mets = self.kl(kl)
@@ -301,7 +393,10 @@ class Hierarchy(tfutils.Module):
             else:
                 kl = 0.0
             loss = (rec + kl).mean()
+
+        # Goal encoderとGoal decoderのパラメータ更新
         metrics.update(self.opt(tape, loss, [self.enc, self.dec]))
+
         metrics["goalrec_mean"] = rec.mean()
         metrics["goalrec_std"] = rec.std()
         return metrics
@@ -399,6 +494,7 @@ class Hierarchy(tfutils.Module):
             mag = tf.minimum(gnorm, fnorm) / tf.maximum(gnorm, fnorm)
             return tf.nn.relu(cos * mag)[1:]
         elif self.config.goal_reward == "cosine_max":
+            # here
             gnorm = tf.linalg.norm(goal, axis=-1, keepdims=True) + 1e-12
             fnorm = tf.linalg.norm(feat, axis=-1, keepdims=True) + 1e-12
             norm = tf.maximum(gnorm, fnorm)
@@ -462,6 +558,9 @@ class Hierarchy(tfutils.Module):
         raise NotImplementedError(self.config.adver_impl)
 
     def split_traj(self, traj):
+        """
+        Worker用にTrajectoryを分割
+        """
         traj = traj.copy()
         k = self.config.train_skill_duration
         assert len(traj["action"]) % k == 1
@@ -483,6 +582,9 @@ class Hierarchy(tfutils.Module):
         return traj
 
     def abstract_traj(self, traj):
+        """
+        Manager用にTrajectoryを抽象化
+        """
         traj = traj.copy()
         traj["action"] = traj.pop("skill")
         k = self.config.train_skill_duration

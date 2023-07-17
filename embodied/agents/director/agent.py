@@ -25,6 +25,7 @@ class Agent(tfagent.TFAgent):
         self.act_space = act_space["action"]
         self.step = step
         self.wm = WorldModel(obs_space, config)
+        # Hierarchy class
         self.task_behavior = getattr(behaviors, config.task_behavior)(
             self.wm, self.act_space, self.config
         )
@@ -46,9 +47,9 @@ class Agent(tfagent.TFAgent):
             lambda obs: (self.wm.rssm.initial(len(obs["is_first"])))
         )
 
-    @tf.function
+    @tf.function(jit_compile=False)
     def policy(self, obs, state=None, mode="train"):
-        tf.print("[Agent.policy]")
+        # tf.print("[Agent.policy]")
         self.config.tf.jit and print("Tracing policy function.")
         if state is None:
             state = self.initial_policy_state(obs)
@@ -72,44 +73,52 @@ class Agent(tfagent.TFAgent):
             "action": tfutils.action_noise(outs["action"], noise, self.act_space),
         }
         state = (latent, task_state, expl_state, outs["action"])
-        tf.print("[/Agent.policy]")
+        # tf.print("[/Agent.policy]")
         return outs, state
 
     @tf.function(jit_compile=False)
     def train(self, data, state=None):
-        tf.print("[Agent.train]", output_stream=sys.stdout)
+        # tf.print("[Agent.train]", output_stream=sys.stdout)
         self.config.tf.jit and print("Tracing train function.")
         metrics = {}
         if state is None:
             state = self.initial_train_state(data)
         data = self.preprocess(data)
 
-        # print("State:")
-        # pprint.pprint(state, width=1)
-        # print("Data:")
-        # pprint.pprint(data, width=1)
-
+        # 世界モデルの学習
         state, wm_outs, mets = self.wm.train(data, state)
+
         metrics.update(mets)
         context = {**data, **wm_outs["post"]}
         start = tf.nest.map_structure(
             lambda x: x.reshape([-1] + list(x.shape[2:])), context
         )
-        tf.print("[Agent.train] task_behavior.train")
+
+        print("context")
+        pprint.pprint(context)
+        print("start")
+        pprint.pprint(start)
+
+        # Goal Autoencoder + Manager + Worker の学習 (Hierarchy class)
+        # tf.print("[Agent.train] task_behavior.train")
         _, mets = self.task_behavior.train(self.wm.imagine, start, context)
+
         metrics.update(mets)
+
+        # 探索行動の学習（上と全く同じ）
         if self.config.expl_behavior != "None":
-            tf.print("[Agent.train] expl_behavior.train")
+            # tf.print("[Agent.train] expl_behavior.train")
             _, mets = self.expl_behavior.train(self.wm.imagine, start, context)
             metrics.update({"expl_" + key: value for key, value in mets.items()})
+
         outs = {}
         if "key" in data:
             criteria = {**data, **wm_outs}
             outs.update(key=data["key"], priority=criteria[self.config.priority])
-        tf.print("[/Agent.train]")
+        # tf.print("[/Agent.train]")
         return outs, state, metrics
 
-    @tf.function
+    @tf.function(jit_compile=False)
     def report(self, data):
         self.config.tf.jit and print("Tracing report function.")
         data = self.preprocess(data)
@@ -143,6 +152,9 @@ class Agent(tfagent.TFAgent):
             raise NotImplementedError(self.config.data_loader)
 
     def preprocess(self, obs):
+        """
+        Preprocesses observations to be compatible with the world model.
+        """
         dtype = prec.global_policy().compute_dtype
         obs = {k: tf.tensor(v) for k, v in obs.items()}
         obs = obs.copy()
@@ -180,50 +192,100 @@ class WorldModel(tfutils.Module):
         self.wmkl = tfutils.AutoAdapt((), **self.config.wmkl, inverse=False)
 
     def train(self, data, state=None):
-        tf.print("[WorldModel.train]")
+        # tf.print("[WorldModel.train]")
+
+        # 勾配計算のために計算内容を記録しておく
         with tf.GradientTape() as model_tape:
+            # 損失関数を計算
             model_loss, state, outputs, metrics = self.loss(data, state, training=True)
+
+        # 世界モデル一式
+        # heads = Reward, Discount, Decoder
         modules = [self.encoder, self.rssm, *self.heads.values()]
+
+        # Optimizer.__call__()で勾配を計算し、パラメータを更新
         metrics.update(self.model_opt(model_tape, model_loss, modules))
-        tf.print("[/WorldModel.train]")
+
+        # tf.print("[/WorldModel.train]")
         return state, outputs, metrics
 
     def loss(self, data, state=None, training=False):
+        """
+        世界モデルの損失関数をEnd-to-Endで計算する
+        """
         metrics = {}
+
+        # 観測画像をエンコーダーに入力し、潜在ベクトルを取得
         embed = self.encoder(data)
+        # print("Input image into encoder")
+        # print("embed.shape = ", embed.shape)
+
+        # エンコードされた画像入力から求めた潜在表現（posterior z）と
+        # RSSMのhのみから推論した潜在表現（prior z）を計算
         post, prior = self.rssm.observe(embed, data["action"], data["is_first"], state)
+        print("RSSM.observe()")
+        # print("post: ", post)
+        # print("prior: ", prior)
+        # deter: deterministic
+        # stoch: stochastic
+        # logit: logit
+
         dists = {}
+
+        # 勾配計算を止めて定数に
         post_const = tf.nest.map_structure(tf.stop_gradient, post)
+
+        # 勾配計算を止めたpost潜在表現をheadsの各モジュールに入力
+        # Reward: 報酬予測 (MLP)
+        # Count: 割引率予測（MLP）
+        # Decoder: 画像予測（CNN デコーダ）
         for name, head in self.heads.items():
+            # 勾配計算を止めたpost潜在表現を入力
             out = head(post if name in self.config.grad_heads else post_const)
             if not isinstance(out, dict):
                 out = {name: out}
+            # print(f"Output of {name} head: ", out)
             dists.update(out)
+
         losses = {}
+
+        # posterior z　と prior z^　を比較してKLロスを計算
+        # wmkl_balance = 0.8
         kl = self.rssm.kl_loss(post, prior, self.config.wmkl_balance)
         kl, mets = self.wmkl(kl, update=training)
         losses["kl"] = kl
         metrics.update({f"wmkl_{k}": v for k, v in mets.items()})
+
+        # reward, cont, decoderモジュールのロスを計算
+        # - Image log loss
+        # - Reward log loss
+        # - Discount log loss
         for key, dist in dists.items():
             losses[key] = -dist.log_prob(data[key].astype(tf.float32))
+
         metrics.update({f"{k}_loss_mean": v.mean() for k, v in losses.items()})
         metrics.update({f"{k}_loss_std": v.std() for k, v in losses.items()})
+
+        # 4つのロスを重み付けして合計
         scaled = {}
         for key, loss in losses.items():
             assert loss.shape == embed.shape[:2], (key, loss.shape)
             scaled[key] = loss * self.config.loss_scales.get(key, 1.0)
         model_loss = sum(scaled.values())
+
         if "prob" in data and self.config.priority_correct:
             weights = (1.0 / data["prob"]) ** self.config.priority_correct
             weights /= weights.max()
             assert weights.shape == model_loss.shape
             model_loss *= weights
+
         out = {"embed": embed, "post": post, "prior": prior}
         out.update({f"{k}_loss": v for k, v in losses.items()})
         metrics["prior_ent"] = self.rssm.get_dist(prior).entropy().mean()
         metrics["post_ent"] = self.rssm.get_dist(post).entropy().mean()
         metrics["model_loss_mean"] = model_loss.mean()
         metrics["model_loss_std"] = model_loss.std()
+
         if not self.config.tf.debug_nans:
             if "reward" in dists:
                 stats = tfutils.balance_stats(dists["reward"], data["reward"], 0.1)
@@ -231,6 +293,8 @@ class WorldModel(tfutils.Module):
             if "cont" in dists:
                 stats = tfutils.balance_stats(dists["cont"], data["cont"], 0.5)
                 metrics.update({f"cont_{k}": v for k, v in stats.items()})
+
+        # state = 末尾タイムステップのpost潜在表現
         last_state = {k: v[:, -1] for k, v in post.items()}
         return model_loss.mean(), last_state, out, metrics
 
@@ -269,14 +333,23 @@ class WorldModel(tfutils.Module):
             action = action.sample()
         actions = [action]
         carries = [carry]
+
+        # horizon = 16
+        # 数タイムステップ先までをループで予測
         for _ in range(horizon):
+
+            # RSSMに潜在状態と行動を入力して次の状態を予測
             states.append(self.rssm.img_step(states[-1], actions[-1]))
+
+            # 行動を決定
             outs, carry = policy(states[-1], carry)
             action = outs["action"]
+            
             if hasattr(action, "sample"):
                 action = action.sample()
             actions.append(action)
             carries.append(carry)
+
         transp = lambda x: {k: [x[t][k] for t in range(len(x))] for k in x[0]}
         traj = {**transp(states), **transp(carries), "action": actions}
         traj = {k: tf.stack(v, 0) for k, v in traj.items()}

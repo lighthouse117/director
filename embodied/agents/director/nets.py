@@ -221,6 +221,7 @@ class MultiEncoder(tfutils.Module):
         print("[MultiEncoder.__init__]")
         excluded = ("is_first", "is_last")
         shapes = {k: v for k, v in shapes.items() if k not in excluded}
+        # cnn_keysに"image"などのラベルが設定されている
         self.cnn_shapes = {
             k: v for k, v in shapes.items() if re.match(cnn_keys, k) and len(v) == 3
         }
@@ -249,6 +250,7 @@ class MultiEncoder(tfutils.Module):
         }
         outputs = []
         if self.cnn_shapes:
+            # 画像データを取り出して、CNNに入力する
             inputs = tf.concat([data[k] for k in self.cnn_shapes], -1)
             output = self._cnn(inputs)
             output = output.reshape((output.shape[0], -1))
@@ -283,9 +285,12 @@ class MultiDecoder(tfutils.Module):
         print("[MultiDecoder.__init__]")
         excluded = ("is_first", "is_last", "is_terminal", "reward")
         shapes = {k: v for k, v in shapes.items() if k not in excluded}
+        # shapes（transition dict）の中から入力データのラベルを探す
+        # cnn_keysに"image"などのラベルが設定されている
         self.cnn_shapes = {
             k: v for k, v in shapes.items() if re.match(cnn_keys, k) and len(v) == 3
         }
+        # 今回はMLPは使わない
         self.mlp_shapes = {
             k: v for k, v in shapes.items() if re.match(mlp_keys, k) and len(v) == 1
         }
@@ -342,8 +347,17 @@ class ImageEncoderSimple(tfutils.Module):
         Conv = functools.partial(Conv2D, stride=2, pad="valid")
         x = features.astype(prec.global_policy().compute_dtype)
         depth = self._depth
+        # "conv0", "conv1", "conv2", "conv3"が作成される
+        # それぞれのConvのdepthは64, 128, 256, 512
+        # kernelは4
         for i, kernel in enumerate(self._kernels):
+            # "conv0"という名前でConv(depth, kernel)を保存、または取得
+            # 4つのCNNを通す
+            # print(f"Input shape of conv{i}: {x.shape}")
             x = self.get(f"conv{i}", Conv, depth, kernel, **self._kw)(x)
+            # print(
+            #     f"Output shape of conv{i} (depth={depth}, kernel={kernel}): {x.shape}"
+            # )
             depth *= 2
         return x
 
@@ -387,11 +401,14 @@ class MLP(tfutils.Module):
         x = tf.cast(feat, prec.global_policy().compute_dtype)
         x = x.reshape([-1, x.shape[-1]])
         for i in range(self._layers):
+            # print(f"Input shape of dense{i}: {x.shape}")
             x = self.get(f"dense{i}", Dense, self._units, **self._dense)(x)
+            # print(f"Output shape of dense{i}: {x.shape}")
         x = x.reshape(feat.shape[:-1] + [x.shape[-1]])
         if self._shape is None:
             return x
         elif isinstance(self._shape, tuple):
+            # 確率分布に変換
             return self._out("out", self._shape, x)
         elif isinstance(self._shape, dict):
             return {k: self._out(k, v, x) for k, v in self._shape.items()}
@@ -399,6 +416,8 @@ class MLP(tfutils.Module):
             raise ValueError(self._shape)
 
     def _out(self, name, shape, x):
+        # print("Output shape of Dense: ", x.shape)
+        # print("Convert to distribution: ", name, shape)
         return self.get(f"dist_{name}", DistLayer, shape, **self._dist)(x)
 
 
@@ -479,6 +498,8 @@ class DistLayer(tfutils.Module):
                 probs = (1 - self._unimix) * probs + self._unimix * uniform
                 dist = tfutils.OneHotDist(probs=probs)
             else:
+                # print("Create OneHotDist")
+                # print("logits: ", out.shape)
                 dist = tfutils.OneHotDist(logits=out)
             if len(self._shape) > 1:
                 dist = tfd.Independent(dist, len(self._shape) - 1)
@@ -503,10 +524,13 @@ class Conv2D(tfutils.Module):
         kwargs = {}
         kwargs["use_bias"] = bias and norm == "none"
         if transp:
+            # Decoder用
             self._layer = tfkl.Conv2DTranspose(depth, kernel, stride, pad, **kwargs)
         else:
             self._layer = tfkl.Conv2D(depth, kernel, stride, pad, **kwargs)
+        # 活性化関数
         self._act = get_act(act)
+        # バッチ正規化
         self._norm = Norm(norm)
 
     def __call__(self, hidden):

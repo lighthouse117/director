@@ -3,6 +3,7 @@ import sys
 import warnings
 import tensorflow as tf
 import wandb
+
 # import mlflow
 import absl
 
@@ -22,15 +23,18 @@ __package__ = directory.name
 
 import embodied
 
+WANDB = False
+
 
 def main(argv=None):
     from . import agent as agnt
     from . import train_with_viz
 
-    # wandb.init(
-    #     project="director",
-    #     sync_tensorboard=True,
-    # )
+    if WANDB:
+        wandb.init(
+            project="director",
+            sync_tensorboard=True,
+        )
 
     # 実行時の引数
     parsed, other = embodied.Flags(
@@ -74,6 +78,7 @@ def main(argv=None):
                 embodied.logger.JSONLOutput(logdir, "metrics.jsonl"),
                 embodied.logger.TensorBoardOutput(logdir),
             ],
+            # 1ステップあたりの環境ステップ数
             multiplier=config.env.repeat,
         )
 
@@ -107,7 +112,8 @@ def main(argv=None):
     else:
         raise NotImplementedError(config.replay)
 
-    # wandb.config.update(config)
+    if WANDB:
+        wandb.config.update(config)
 
     # モードに応じて学習を実行
     try:
@@ -171,7 +177,8 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    # wandb.login(key="6b65aa89d9170a9484ef41dd3783f39f50f19943")
+    if WANDB:
+        wandb.login(key="6b65aa89d9170a9484ef41dd3783f39f50f19943")
     # mlflow.set_experiment("test")
     # mlflow.tensorflow.autolog()
     main()

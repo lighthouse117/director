@@ -43,8 +43,9 @@ defaults:
     }
   tf:
     {
-      jit: False,
-      platform: multi_gpu,
+      # eagerモードを使うかどうか
+      jit: True,
+      platform: gpu,
       precision: 16,
       debug_nans: False,
       logical_gpus: 0,
@@ -58,7 +59,8 @@ defaults:
   filter: ".*"
   tbtt: 0
   train:
-    steps: 1e8
+    # steps: 1e8
+    steps: 1e3
     expl_until: 0
     # log_every: 1e4
     log_every: 1e3
@@ -356,6 +358,8 @@ atari:
   encoder: { mlp_keys: "$^", cnn_keys: "image" }
   decoder: { mlp_keys: "$^", cnn_keys: "image" }
   env: { gray: True, repeat: 4 }
+  # train.steps: 5e7
+  # train.steps: 1e6
   train.steps: 1e4
 
 crafter:

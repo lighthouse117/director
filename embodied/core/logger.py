@@ -95,12 +95,14 @@ class TerminalOutput:
       self._console = None
 
   def __call__(self, summaries):
+    # summaraies is a tuple of _metrics
+    # step, name, value
     step = max(s for s, _, _, in summaries)
     scalars = {k: float(v) for _, k, v in summaries if len(v.shape) == 0}
     scalars = {k: v for k, v in scalars.items() if self._pattern.search(k)}
     formatted = {k: self._format_value(v) for k, v in scalars.items()}
     if self._console:
-      self._console.rule(f'[green bold]Step {step}')
+      self._console.rule(f'[green bold]Step(Env) {step}')
       self._console.print(' [blue]/[/blue] '.join(
           f'{k} {v}' for k, v in formatted.items()))
       print('')
