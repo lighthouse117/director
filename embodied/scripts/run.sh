@@ -2,5 +2,4 @@
 
 python agents/director/train.py \
   --logdir logdir/$(date +%Y%m%d-%H%M%S) \
-  --configs atari \
-  --task atari_pong
+  --configs atari

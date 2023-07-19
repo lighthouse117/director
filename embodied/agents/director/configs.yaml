@@ -1,8 +1,8 @@
 defaults:
   # Trainer
   logdir: /dev/null
-  run: train
-  # run: train_with_viz
+  # run: train
+  run: train_with_viz
   seed: 0
   task: dummy_discrete
   env:
@@ -61,17 +61,17 @@ defaults:
     # steps: 1e8
     steps: 1e3
     expl_until: 0
-    # log_every: 1e4
-    log_every: 1e3
-    # eval_every: 3e4
-    eval_every: 1e3
+    log_every: 1e4
+    # log_every: 1e3
+    eval_every: 3e4
+    # eval_every: 1e3
     eval_eps: 1
     eval_samples: 1
     train_every: 16
     train_steps: 1
-    train_fill: 1e3
+    train_fill: 1e4
     # train_fill: 10
-    eval_fill: 1e3
+    eval_fill: 1e4
     # eval_fill: 10
     pretrain: 1
     log_zeros: False
@@ -241,8 +241,14 @@ defaults:
   manager_rews: { extr: 1.0, expl: 0.1, goal: 0.0 }
   worker_rews: { extr: 0.0, expl: 0.0, goal: 1.0 }
 
+  worker_inputs: [deter, stoch]
   # worker_inputs: [deter, stoch, goal]
-  worker_inputs: [deter, stoch, skill]
+  # worker_inputs: [deter, stoch, skill]
+  
+  worker_goal_input: goal
+  # worker_goal_input: skill
+
+  
 
   worker_report_horizon: 64
   skill_proposal: manager
@@ -361,7 +367,13 @@ atari:
   decoder: { mlp_keys: "$^", cnn_keys: "image" }
   env: { gray: True, repeat: 4 }
   # train.steps: 5e7
-  # train.steps: 1e6
+  train.steps: 1e6
+  # train.steps: 1e4
+
+gym:
+  task: gym_CartPole-v0
+  encoder: { mlp_keys: "$^", cnn_keys: "image" }
+  decoder: { mlp_keys: "$^", cnn_keys: "image" }
   train.steps: 1e4
 
 crafter:

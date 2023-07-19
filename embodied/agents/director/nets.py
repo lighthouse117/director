@@ -408,15 +408,15 @@ class MLP(tfutils.Module):
             # print(f"Output shape of dense{i}: {x.shape}")
         x = x.reshape(feat.shape[:-1] + [x.shape[-1]])
 
-        if "goal" in self._inputs._keys:
-            print()
-            print("Raw input:")
-            pprint.pprint(inputs)
-            print("Feat:")
-            pprint.pprint(feat)
-            print("Output before dist:")
-            pprint.pprint(x)
-            print()
+        # if "goal" in self._inputs._keys:
+        # print()
+        # print("Raw input:")
+        # pprint.pprint(inputs)
+        # print("Feat:")
+        # pprint.pprint(feat)
+        # print("Output before dist:")
+        # pprint.pprint(x)
+        # print()
 
         if self._shape is None:
             return x

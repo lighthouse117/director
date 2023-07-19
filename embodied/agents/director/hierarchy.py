@@ -17,7 +17,7 @@ class Hierarchy(tfutils.Module):
         print("[Hierarchy.__init__]")
         # wm: WorldModel
         self.wm = wm
-        self.config = config
+
         # extrinsic reward
         self.extr_reward = lambda traj: self.wm.heads["reward"](traj).mean()[1:]
 
@@ -26,6 +26,9 @@ class Hierarchy(tfutils.Module):
             np.int32 if config.goal_encoder.dist == "onehot" else np.float32,
             config.skill_shape,  # skill_shape: [8, 8]
         )
+
+        worker_inputs = config.worker_inputs + (config.worker_goal_input,)
+        self.config = config.update({"worker_inputs": worker_inputs})
 
         wconfig = config.update(
             {
@@ -139,7 +142,6 @@ class Hierarchy(tfutils.Module):
         skill = sg(switch(carry["skill"], self.manager.actor(sg(latent)).sample()))
 
         # 離散表現のゴールから連続の潜在状態へデコード
-        # TODO: デコードせずにそのままゴールを使う
         new_goal = self.dec({"skill": skill, "context": self.feat(latent)}).mode()
 
         # manager_delta = false
@@ -156,13 +158,17 @@ class Hierarchy(tfutils.Module):
         delta = goal - self.feat(latent).astype(tf.float32)
 
         # Workerが行動を決定
-        # TODO: goalをskillのまま入力
-        print("Decide action\n")
-        dist = self.worker.actor(sg({**latent, "skill": skill, "delta": delta}))
-        # dist = self.worker.actor(sg({**latent, "goal": goal, "delta": delta}))
-        print("Action (worker actor): ", dist.sample())
-        print()
+        # print("Decide action\n")
 
+        # TODO: goalをデコード前の離散ベクトルskillのままWorkerへ入力
+        dist = self.worker.actor(
+            sg({**latent, "goal": goal, "skill": skill, "delta": delta})
+        )
+
+        # TODO: デコードした連続ベクトルをWorkerへ入力
+        # dist = self.worker.actor(sg({**latent, "goal": goal, "delta": delta}))
+
+        # print("Action (worker actor): ", dist.sample())
         outs = {"action": dist}
 
         if "image" in self.wm.heads["decoder"].shapes:
@@ -188,7 +194,6 @@ class Hierarchy(tfutils.Module):
             tf.print("[Hierarchy.train] expl_reward.train")
             metrics.update(self.expl_reward.train(data))
 
-        # Yes
         if self.config.vae_replay:
             # Goal Autoencoderの学習
             metrics.update(self.train_vae_replay(data))
@@ -237,7 +242,7 @@ class Hierarchy(tfutils.Module):
         return None, metrics
 
     def train_jointly(self, imagine, start):
-        tf.print("[Hierarchy.train_jointly]")
+        # tf.print("[Hierarchy.train_jointly]")
         start = start.copy()
         metrics = {}
 
@@ -252,30 +257,30 @@ class Hierarchy(tfutils.Module):
                 self.initial(len(start["is_first"])),
             )
 
-            print("traj (wm.imagine_carry)", traj.keys())
+            # print("traj (wm.imagine_carry)", traj.keys())
 
             # 報酬を予測
             traj["reward_extr"] = self.extr_reward(traj)
-            print("traj[reward_extr]", traj["reward_extr"].shape)
+            # print("traj[reward_extr]", traj["reward_extr"].shape)
 
             # self.elbo_reward(traj)
             traj["reward_expl"] = self.expl_reward(traj)
-            print("traj[reward_expl]", traj["reward_expl"].shape)
+            # print("traj[reward_expl]", traj["reward_expl"].shape)
 
             # goal_rewardを計算
             traj["reward_goal"] = self.goal_reward(traj)
-            print("traj[reward_goal]", traj["reward_goal"].shape)
+            # print("traj[reward_goal]", traj["reward_goal"].shape)
 
             # trajからdeterministicnな潜在状態を取り出して、ゴール状態との差分を計算
             traj["delta"] = traj["goal"] - self.feat(traj).astype(tf.float32)
-            print("traj[delta]", traj["delta"].shape)
+            # print("traj[delta]", traj["delta"].shape)
 
             wtraj = self.split_traj(traj)
-            print("wtraj", wtraj.keys())
+            # print("wtraj", wtraj.keys())
 
             # Kタイムステップとばした抽象的なtrajectory
             mtraj = self.abstract_traj(traj)
-            print("mtraj", mtraj.keys())
+            # print("mtraj", mtraj.keys())
 
         # Workerの学習
         mets = self.worker.update(wtraj, tape)
@@ -284,7 +289,7 @@ class Hierarchy(tfutils.Module):
         # Managerの学習
         mets = self.manager.update(mtraj, tape)
         metrics.update({f"manager_{k}": v for k, v in mets.items()})
-        
+
         return traj, metrics
 
     def train_jointly_old(self, imagine, start):
@@ -710,6 +715,7 @@ class Hierarchy(tfutils.Module):
         worker = lambda s: self.worker.actor(
             {
                 **s,
+                "goal": goal,
                 "skill": skill,
                 "delta": goal - self.feat(s).astype(tf.float32),
             }
