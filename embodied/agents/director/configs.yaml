@@ -1,6 +1,9 @@
 defaults:
   # Trainer
   logdir: /dev/null
+
+  use_wandb: True
+
   # run: train
   run: train_with_viz
   seed: 0
@@ -59,12 +62,10 @@ defaults:
   tbtt: 0
   train:
     # steps: 1e8
-    steps: 1e3
+    steps: 1e7
     expl_until: 0
     log_every: 1e4
-    # log_every: 1e3
     eval_every: 3e4
-    # eval_every: 1e3
     eval_eps: 1
     eval_samples: 1
     train_every: 16
@@ -212,7 +213,10 @@ defaults:
   episodic: True
   discount: 0.99
   imag_discount: 0.99
+
   imag_horizon: 16
+  # imag_horizon: 32
+
   imag_unroll: True
   critic_return: gve
   actor_return: gve
@@ -235,20 +239,19 @@ defaults:
   rewnorm_discount: False
 
   # HRL
-  env_skill_duration: 8
-  train_skill_duration: 8
+  env_skill_duration: 2
+  train_skill_duration: 2
   skill_shape: [8, 8]
   manager_rews: { extr: 1.0, expl: 0.1, goal: 0.0 }
   worker_rews: { extr: 0.0, expl: 0.0, goal: 1.0 }
 
   worker_inputs: [deter, stoch]
+  # worker_inputs: [disc_deter]
   # worker_inputs: [deter, stoch, goal]
   # worker_inputs: [deter, stoch, skill]
-  
+
   worker_goal_input: goal
   # worker_goal_input: skill
-
-  
 
   worker_report_horizon: 64
   skill_proposal: manager
@@ -367,8 +370,8 @@ atari:
   decoder: { mlp_keys: "$^", cnn_keys: "image" }
   env: { gray: True, repeat: 4 }
   # train.steps: 5e7
-  train.steps: 1e6
-  # train.steps: 1e4
+  # train.steps: 1e6
+  train.steps: 1e7
 
 gym:
   task: gym_CartPole-v0

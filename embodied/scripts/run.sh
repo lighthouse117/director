@@ -1,5 +1,5 @@
 # Script for training
 
-python agents/director/train.py \
+python embodied/agents/director/train.py \
   --logdir logdir/$(date +%Y%m%d-%H%M%S) \
-  --configs atari
+  --configs pinpad

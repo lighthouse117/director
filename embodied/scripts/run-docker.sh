@@ -6,7 +6,8 @@ GPU_NUMBER=""
 
 CMD="python agents/director/train.py \
   --logdir logdir/$(date +%Y%m%d-%H%M%S) \
-  --configs atari"
+  --configs pinpad"
+# CMD="/bin/bash"
 
 # Parse the arguments
 while getopts ":g:" opt; do
@@ -38,6 +39,7 @@ CONTAINER_NAME="$CONTAINER_NAME$GPU_NUMBER"
 docker run -it --rm --runtime=nvidia --gpus device=$GPU_NUMBER \
     -v ~/director/embodied:/src/embodied \
     --ipc=host \
+    -e WANDB_API_KEY=$WANDB_API_KEY \
     --name $CONTAINER_NAME $IMAGE_NAME \
     $CMD
 

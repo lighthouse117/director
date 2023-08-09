@@ -23,18 +23,10 @@ __package__ = directory.name
 
 import embodied
 
-WANDB = True
-
 
 def main(argv=None):
     from . import agent as agnt
     from . import train_with_viz
-
-    if WANDB:
-        wandb.init(
-            project="director",
-            sync_tensorboard=True,
-        )
 
     # 実行時の引数
     parsed, other = embodied.Flags(
@@ -57,6 +49,12 @@ def main(argv=None):
     logdir = embodied.Path(config.logdir)
     step = embodied.Counter()
     cleanup = []
+
+    if config.use_wandb:
+        wandb.init(
+            project="director",
+            sync_tensorboard=True,
+        )
 
     # actingモードの場合は、actorごとにログをとる
     if config.run == "acting":
@@ -112,7 +110,7 @@ def main(argv=None):
     else:
         raise NotImplementedError(config.replay)
 
-    if WANDB:
+    if config.use_wandb:
         wandb.config.update(config)
 
     # モードに応じて学習を実行
@@ -177,8 +175,6 @@ def main(argv=None):
 
 
 if __name__ == "__main__":
-    if WANDB:
-        wandb.login(key="6b65aa89d9170a9484ef41dd3783f39f50f19943")
     # mlflow.set_experiment("test")
     # mlflow.tensorflow.autolog()
     main()

@@ -1,5 +1,6 @@
 import functools
 import inspect
+import pprint
 
 import embodied
 import numpy as np
@@ -144,6 +145,13 @@ class Hierarchy(tfutils.Module):
         # 離散表現のゴールから連続の潜在状態へデコード
         new_goal = self.dec({"skill": skill, "context": self.feat(latent)}).mode()
 
+        # TODO: 現在の観測を離散表現へエンコード
+        disc_deter = self.enc(
+            {"goal": latent["deter"], "context": self.feat(latent)}
+        ).mode()
+        # print("Encode current observation")
+        # print(disc_deter)
+
         # manager_delta = false
         # manager_delta -> 現在状態からの差分をゴールとするようにする
         # new_goal = (
@@ -160,13 +168,21 @@ class Hierarchy(tfutils.Module):
         # Workerが行動を決定
         # print("Decide action\n")
 
-        # TODO: goalをデコード前の離散ベクトルskillのままWorkerへ入力
-        dist = self.worker.actor(
-            sg({**latent, "goal": goal, "skill": skill, "delta": delta})
-        )
+        # TODO(done): デコード後のgoalとデコード前のskillの両方をWorkerへ入力
+        # TODO: 現在の状態をデコードした離散バージョンのzも入力する
 
-        # TODO: デコードした連続ベクトルをWorkerへ入力
-        # dist = self.worker.actor(sg({**latent, "goal": goal, "delta": delta}))
+        worker_input = {
+            **latent,
+            "goal": goal,
+            "skill": skill,
+            "delta": delta,
+            # "disc_deter": disc_deter,
+        }
+
+        # for key in worker_input:
+        #     print(key, worker_input[key].shape)
+
+        dist = self.worker.actor(sg(worker_input))
 
         # print("Action (worker actor): ", dist.sample())
         outs = {"action": dist}
@@ -194,8 +210,9 @@ class Hierarchy(tfutils.Module):
             tf.print("[Hierarchy.train] expl_reward.train")
             metrics.update(self.expl_reward.train(data))
 
+        # Goal Autoencoderの学習
         if self.config.vae_replay:
-            # Goal Autoencoderの学習
+            # TODO: これだけを最初に単独で回したい
             metrics.update(self.train_vae_replay(data))
 
         # No
@@ -242,11 +259,15 @@ class Hierarchy(tfutils.Module):
         return None, metrics
 
     def train_jointly(self, imagine, start):
+        """
+        RSSMでトラジェクトリを生成して、WorkerとManagerを学習
+        """
         # tf.print("[Hierarchy.train_jointly]")
         start = start.copy()
         metrics = {}
 
         with tf.GradientTape(persistent=True) as tape:
+            # imag=True
             policy = functools.partial(self.policy, imag=True)
 
             # 世界モデルで数タイムステップ先までのトラジェクトリを想像して生成
@@ -259,15 +280,15 @@ class Hierarchy(tfutils.Module):
 
             # print("traj (wm.imagine_carry)", traj.keys())
 
-            # 報酬を予測
+            # Manager用 環境から得られる報酬をWorld Modelで予測
             traj["reward_extr"] = self.extr_reward(traj)
             # print("traj[reward_extr]", traj["reward_extr"].shape)
 
-            # self.elbo_reward(traj)
+            # Manager用 探索報酬を計算 elbo_reward(traj)
             traj["reward_expl"] = self.expl_reward(traj)
             # print("traj[reward_expl]", traj["reward_expl"].shape)
 
-            # goal_rewardを計算
+            # Worker用 ゴールとの近さに基づく報酬を計算
             traj["reward_goal"] = self.goal_reward(traj)
             # print("traj[reward_goal]", traj["reward_goal"].shape)
 
@@ -371,7 +392,7 @@ class Hierarchy(tfutils.Module):
 
     def train_vae_replay(self, data):
         """
-        Replay Bufferからデータを取り出してVAEを学習する
+        Replay Bufferにある実際の画像からVAEを学習する
         """
 
         # tf.print("[Hierarchy.train_vae_replay]")
@@ -422,6 +443,9 @@ class Hierarchy(tfutils.Module):
         return metrics
 
     def train_vae_imag(self, traj):
+        """
+        世界モデルで生成したTrajectoryからVAEを学習する
+        """
         tf.print("[Hierarchy.train_vae_imag]")
         metrics = {}
         feat = self.feat(traj).astype(tf.float32)
@@ -524,7 +548,9 @@ class Hierarchy(tfutils.Module):
         raise NotImplementedError(impl)
 
     def goal_reward(self, traj):
+        # feat: ["deter""]
         feat = self.feat(traj).astype(tf.float32)
+
         goal = tf.stop_gradient(traj["goal"].astype(tf.float32))
         skill = tf.stop_gradient(traj["skill"].astype(tf.float32))
         context = tf.stop_gradient(
@@ -624,6 +650,7 @@ class Hierarchy(tfutils.Module):
         if self.config.adver_impl == "abs":
             return tf.abs(dec.mode() - feat).mean(-1)[1:]
         elif self.config.adver_impl == "squared":
+            # default
             return ((dec.mode() - feat) ** 2).mean(-1)[1:]
         elif self.config.adver_impl == "elbo_scaled":
             return (kl - ll / self.kl.scale())[1:]

@@ -1,6 +1,7 @@
 import functools
 import re
 import pprint
+import sys
 
 import numpy as np
 import tensorflow as tf
@@ -400,23 +401,18 @@ class MLP(tfutils.Module):
     def __call__(self, inputs):
         feat = self._inputs(inputs)
 
+        if "skill" in self._inputs._keys and "disc_deter" in self._inputs._keys:
+            tf.print(feat, output_stream=sys.stdout)
+
         x = tf.cast(feat, prec.global_policy().compute_dtype)
         x = x.reshape([-1, x.shape[-1]])
+
         for i in range(self._layers):
             # print(f"Input shape of dense{i}: {x.shape}")
             x = self.get(f"dense{i}", Dense, self._units, **self._dense)(x)
             # print(f"Output shape of dense{i}: {x.shape}")
         x = x.reshape(feat.shape[:-1] + [x.shape[-1]])
 
-        # if "goal" in self._inputs._keys:
-        # print()
-        # print("Raw input:")
-        # pprint.pprint(inputs)
-        # print("Feat:")
-        # pprint.pprint(feat)
-        # print("Output before dist:")
-        # pprint.pprint(x)
-        # print()
 
         if self._shape is None:
             return x

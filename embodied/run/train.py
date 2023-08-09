@@ -108,18 +108,18 @@ def train(
                 # batch_size数 x replay_chunk数のタイムステップ分の情報が入っている
                 batch[0] = next(dataset)
 
-                print(f"Batch[0] has {len(batch[0])} elements:")
-                for key, value in batch[0].items():
-                    if hasattr(value, "shape"):
-                        print(key, value.shape, value.dtype)
-                    else:
-                        print(key, value)
-                print(f"State[0] has {len(state[0])} elements:")
-                for key, value in state[0].items():
-                    if hasattr(value, "shape"):
-                        print(key, value.shape, value.dtype)
-                    else:
-                        print(key, value)
+                # print(f"Batch[0] has {len(batch[0])} elements:")
+                # for key, value in batch[0].items():
+                #     if hasattr(value, "shape"):
+                #         print(key, value.shape, value.dtype)
+                #     else:
+                #         print(key, value)
+                # print(f"State[0] has {len(state[0])} elements:")
+                # for key, value in state[0].items():
+                #     if hasattr(value, "shape"):
+                #         print(key, value.shape, value.dtype)
+                #     else:
+                #         print(key, value)
 
                 # エージェントの学習（世界モデル ＋ Goal Autoencoder + Manager + Worker）
                 outs, state[0], mets = agent.train(batch[0], state[0])

@@ -47,7 +47,7 @@ class Agent(tfagent.TFAgent):
             lambda obs: (self.wm.rssm.initial(len(obs["is_first"])))
         )
 
-    @tf.function(jit_compile=False)
+    @tf.function(jit_compile=True)
     def policy(self, obs, state=None, mode="train"):
         # tf.print("[Agent.policy]")
         self.config.tf.jit and print("Tracing policy function.")
@@ -76,7 +76,7 @@ class Agent(tfagent.TFAgent):
         # tf.print("[/Agent.policy]")
         return outs, state
 
-    @tf.function(jit_compile=False)
+    @tf.function(jit_compile=True)
     def train(self, data, state=None):
         # tf.print("[Agent.train]", output_stream=sys.stdout)
         self.config.tf.jit and print("Tracing train function.")
@@ -100,6 +100,7 @@ class Agent(tfagent.TFAgent):
         # pprint.pprint(start)
 
         # Goal Autoencoder + Manager + Worker の学習 (Hierarchy class)
+
         # tf.print("[Agent.train] task_behavior.train")
         _, mets = self.task_behavior.train(self.wm.imagine, start, context)
 
@@ -118,7 +119,7 @@ class Agent(tfagent.TFAgent):
         # tf.print("[/Agent.train]")
         return outs, state, metrics
 
-    @tf.function(jit_compile=False)
+    @tf.function(jit_compile=True)
     def report(self, data):
         self.config.tf.jit and print("Tracing report function.")
         data = self.preprocess(data)
