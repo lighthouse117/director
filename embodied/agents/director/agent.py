@@ -223,7 +223,9 @@ class WorldModel(tfutils.Module):
 
         # エンコードされた画像入力から求めた潜在表現（posterior z）と
         # RSSMのhのみから推論した潜在表現（prior z）を計算
+        # (観測を見る前のzの予測値と、観測を見た後のzの予測値）
         post, prior = self.rssm.observe(embed, data["action"], data["is_first"], state)
+
         # print("RSSM.observe()")
         # print("post: ", post)
         # print("prior: ", prior)
@@ -241,7 +243,8 @@ class WorldModel(tfutils.Module):
         # Count: 割引率予測（MLP）
         # Decoder: 画像予測（CNN デコーダ）
         for name, head in self.heads.items():
-            # 勾配計算を止めたpost潜在表現を入力
+            # post潜在表現を入力 (decoder, reward, cont は勾配を通す)
+            # stochとdeterが入力される
             out = head(post if name in self.config.grad_heads else post_const)
             if not isinstance(out, dict):
                 out = {name: out}
@@ -435,6 +438,9 @@ class ImagActorCritic(tfutils.Module):
         metrics = {}
         for key, critic in self.critics.items():
             mets = critic.train(traj, self.actor)
+            if key == "goal":
+                print("Goal reward")
+                print(traj["reward_goal"].shape)
             metrics.update({f"{key}_{k}": v for k, v in mets.items()})
         with tape:
             scores = []

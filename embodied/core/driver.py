@@ -104,6 +104,7 @@ class Driver:
 
         # エピソードの末尾
         if self._obs["is_last"].any():
+            print(trn.keys())
             for i, done in enumerate(self._obs["is_last"]):
                 if not done:
                     continue

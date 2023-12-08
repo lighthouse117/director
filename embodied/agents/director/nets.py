@@ -142,13 +142,23 @@ class RSSM(tfutils.Module):
             prev_state,
             self.initial(len(is_first)),
         )
+
+        # hとaからh_t+1、z_t+1を予測（Recurrent model & Transition model）
+        # 観測を見る前なのでprior
         prior = self.img_step(prev_state, prev_action)
+
+        # h_t+1と観測oからz_t+1を予測（Representation model）
+        # 観測を見た後なのでposterior
         x = tf.concat([prior["deter"], embed], -1)
+        # z_t+1の分布を予測
         x = self.get("obs_out", Dense, **self._kw)(x)
+        # 確率分布からサンプリング
         stats = self._stats_layer("obs_stats", x)
         dist = self.get_dist(stats)
         stoch = self._cast(dist.sample())
         post = {"stoch": stoch, "deter": prior["deter"], **stats}
+
+        # 観測を見る前のzの予測値と、観測を見た後のzの予測値を返す
         return post, prior
 
     def img_step(self, prev_state, prev_action):
@@ -160,13 +170,25 @@ class RSSM(tfutils.Module):
         if len(prev_action.shape) > len(prev_stoch.shape):  # 2D actions.
             shape = prev_action.shape[:-2] + [np.prod(prev_action.shape[-2:])]
             prev_action = prev_action.reshape(shape)
+
+        # Recurrent model
+        # zとaをconcat
         x = tf.concat([prev_stoch, prev_action], -1)
+        # 線形層に通す
         x = self.get("img_in", Dense, **self._kw)(x)
+        # z+a+hをGRUに通して次時刻の決定的潜在状態h_t+1を出力 (2つの返り値は同じ)
         x, deter = self._gru(x, prev_state["deter"])
+
+        # Transition model
+        # h_t+1から確率的潜在状態z_t+1の分布を予測
         x = self.get("img_out", Dense, **self._kw)(x)
+
+        # 確率分布からサンプリング
         stats = self._stats_layer("img_stats", x)
         dist = self.get_dist(stats)
         stoch = self._cast(dist.sample())
+
+        # zとhを返す（観測情報を用いていないのでprior）
         prior = {"stoch": stoch, "deter": deter, **stats}
         return prior
 
@@ -401,8 +423,8 @@ class MLP(tfutils.Module):
     def __call__(self, inputs):
         feat = self._inputs(inputs)
 
-        if "skill" in self._inputs._keys and "disc_deter" in self._inputs._keys:
-            tf.print(feat, output_stream=sys.stdout)
+        # if "skill" in self._inputs._keys and "disc_deter" in self._inputs._keys:
+        #     tf.print(feat, output_stream=sys.stdout)
 
         x = tf.cast(feat, prec.global_policy().compute_dtype)
         x = x.reshape([-1, x.shape[-1]])
@@ -412,7 +434,6 @@ class MLP(tfutils.Module):
             x = self.get(f"dense{i}", Dense, self._units, **self._dense)(x)
             # print(f"Output shape of dense{i}: {x.shape}")
         x = x.reshape(feat.shape[:-1] + [x.shape[-1]])
-
 
         if self._shape is None:
             return x

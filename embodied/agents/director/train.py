@@ -167,6 +167,10 @@ def main(argv=None):
         elif config.run == "acting":
             replay = make_replay("episodes", args.train_fill)
             embodied.run.acting(agent, env, replay, logger, actordir, args)
+        elif config.run == "eval":
+            eval_replay = make_replay("eval_episodes", config.replay_size // 10)
+            replay = make_replay("episodes", config.replay_size)
+            embodied.run.eval(agent, env, replay, eval_replay, logger, args)
         else:
             raise NotImplementedError(config.run)
     finally:

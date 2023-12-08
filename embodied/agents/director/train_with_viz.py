@@ -5,6 +5,8 @@ import warnings
 import embodied
 import numpy as np
 
+# run/train.py がベース
+
 
 def train_with_viz(agent, env, train_replay, eval_replay, logger, args):
     logdir = embodied.Path(args.logdir)

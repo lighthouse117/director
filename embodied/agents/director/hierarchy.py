@@ -687,6 +687,7 @@ class Hierarchy(tfutils.Module):
         Manager用にTrajectoryを抽象化
         """
         traj = traj.copy()
+
         traj["action"] = traj.pop("skill")
         k = self.config.train_skill_duration
         reshape = lambda x: x.reshape([x.shape[0] // k, k] + x.shape[1:])

@@ -2,7 +2,7 @@ defaults:
   # Trainer
   logdir: /dev/null
 
-  use_wandb: True
+  use_wandb: true
 
   # run: train
   run: train_with_viz
@@ -214,8 +214,8 @@ defaults:
   discount: 0.99
   imag_discount: 0.99
 
-  imag_horizon: 16
-  # imag_horizon: 32
+  # imag_horizon: 16
+  imag_horizon: 32
 
   imag_unroll: True
   critic_return: gve
@@ -239,8 +239,8 @@ defaults:
   rewnorm_discount: False
 
   # HRL
-  env_skill_duration: 2
-  train_skill_duration: 2
+  env_skill_duration: 32
+  train_skill_duration: 32
   skill_shape: [8, 8]
   manager_rews: { extr: 1.0, expl: 0.1, goal: 0.0 }
   worker_rews: { extr: 0.0, expl: 0.0, goal: 1.0 }
@@ -371,7 +371,22 @@ atari:
   env: { gray: True, repeat: 4 }
   # train.steps: 5e7
   # train.steps: 1e6
-  train.steps: 1e7
+  # train.steps: 1e7
+  train.steps: 3e6
+
+atari_freeway:
+  task: atari_freeway
+  encoder: { mlp_keys: "$^", cnn_keys: "image" }
+  decoder: { mlp_keys: "$^", cnn_keys: "image" }
+  env: { gray: True, repeat: 4 }
+  train.steps: 1e6
+
+atari_pong:
+  task: atari_pong
+  encoder: { mlp_keys: "$^", cnn_keys: "image" }
+  decoder: { mlp_keys: "$^", cnn_keys: "image" }
+  env: { gray: True, repeat: 4 }
+  train.steps: 3e6
 
 gym:
   task: gym_CartPole-v0
@@ -386,11 +401,19 @@ crafter:
   train.log_keys_max: "^log_achievement_.*"
   train.log_keys_sum: "^log_reward$"
 
-dmc_vision:
+dmc_vision_acrobot:
+  task: dmc_acrobot_swingup
+  encoder: { mlp_keys: "$^", cnn_keys: "image" }
+  decoder: { mlp_keys: "$^", cnn_keys: "image" }
+  env.repeat: 1
+  train.steps: 1e6
+
+dmc_vision_walker:
   task: dmc_walker_walk
   encoder: { mlp_keys: "$^", cnn_keys: "image" }
   decoder: { mlp_keys: "$^", cnn_keys: "image" }
   env.repeat: 1
+  train.steps: 1e6
 
 dmc_proprio:
   task: dmc_walker_walk
@@ -399,7 +422,7 @@ dmc_proprio:
   env.repeat: 1
 
 pinpad:
-  task: pinpad_five
+  task: pinpad_four
   encoder: { mlp_keys: "$^", cnn_keys: "image" }
   decoder: { mlp_keys: "$^", cnn_keys: "image" }
 

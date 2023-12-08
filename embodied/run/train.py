@@ -77,7 +77,9 @@ def train(
     driver.on_step(replay.add)
 
     print(f"Replay buffer has {len(replay)} transitions.")
+
     train_fill = max(0, args.train_fill - len(replay))
+    # args.train_fillの方がreplay bufferのサイズより大きい場合はreplay bufferを埋める
     if train_fill:
         print(f"Fill train dataset ({train_fill} steps).")
         random_agent = embodied.RandomAgent(env.act_space)
